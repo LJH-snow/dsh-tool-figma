@@ -1,0 +1,8 @@
+# Example dsh composition config for dsh-tool-figma.
+# Keep the personal access token in a secret manager/environment-backed deployment config.
+
+- name: 'github:LJH-snow/dsh-tool-figma'
+  config:
+    # baseUrl: 'https://api.figma.com/v1'
+    tokenEnv: 'FIGMA_TOKEN'
+    # timeoutMs: 30000
