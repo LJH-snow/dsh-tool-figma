@@ -24,6 +24,8 @@ npm install @libai168/dsh-tool-figma
 
 插件从 `tokenEnv` 指定的环境变量读取 Figma 个人访问令牌（默认 `FIGMA_TOKEN`）。不要把可用令牌写入源码、示例、测试或提交的配置文件。令牌在 Figma 的 **Settings > Security > Personal access tokens** 创建，并只授予部署所需权限（至少 *File content: read*；`figma_post_comment` 需要 *Write comments*）。
 
+`baseUrl` 覆盖 必须是绝对的 `http://` 或 `https://` 根地址。只允许公网可达主机：localhost、环回、私有、链路本地、CGNAT、组播、保留/文档/基准测试网段以及全部 IANA 特殊用途地址段都会被拒绝；DNS 结果包含任一此类地址时会在发出请求前 fail closed。不允许 credentials、query、fragment 或非根路径。
+
 ## 工具
 
 | 工具 | 说明 | 写操作 |

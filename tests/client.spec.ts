@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { FigmaClient, FigmaError } from '../src/client.ts'
 
+/** Deterministic DNS so tests never depend on real resolution. */
+const publicLookup = async () => [{ address: '93.184.216.34', family: 4 as const }]
+
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
@@ -9,7 +13,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 const testToken = process.env.FIGMA_TEST_TOKEN ?? `figd-test-${randomUUID()}`
 
 function client(fetchImpl: ReturnType<typeof vi.fn>) {
-  return new FigmaClient({ baseUrl: 'https://figma.test.invalid/v1', token: testToken, fetchImpl })
+  return new FigmaClient({ lookupImpl: publicLookup, baseUrl: 'https://figma.test.invalid/v1', token: testToken, fetchImpl })
 }
 
 describe('FigmaClient', () => {
@@ -123,6 +127,80 @@ describe('FigmaClient', () => {
     const files = await fire.listProjectFiles('p1')
     expect(files).toEqual({ projectName: 'Web', files: [{ key: 'k1', name: 'Landing', lastModified: '2026-10-04' }] })
     await expect(fire.authTest()).rejects.toThrow('Invalid token')
-    await expect(new FigmaClient({}).authTest()).rejects.toThrow(FigmaError)
+    await expect(new FigmaClient({ lookupImpl: publicLookup,}).authTest()).rejects.toThrow(FigmaError)
+  })
+})
+
+describe('Figma endpoint security', () => {
+  const valid = { token: 'figd_test' }
+
+  it('rejects invalid base URLs without exposing their contents', () => {
+    for (const baseUrl of [
+      'api.figma.com/v1',
+      'ftp://api.figma.com/v1',
+      'https://user:secretapi.figma.com/v1',
+      'https://api.figma.com/v1?token=secret',
+      'https://api.figma.com/v1#fragment',
+    ]) {
+      let error: unknown
+      try { new FigmaClient({ ...valid, baseUrl }) } catch (thrown) { error = thrown }
+      expect(error).toBeInstanceOf(FigmaError)
+      expect(String(error)).not.toContain('secret')
+    }
+  })
+
+  it('rejects literal local, private, and reserved addresses before fetch', async () => {
+    for (const baseUrl of [
+      'http://localhost',
+      'http://service.localhost',
+      'http://service.local',
+      'http://127.0.0.1',
+      'http://169.254.169.254',
+      'http://0.0.0.0',
+      'http://10.0.0.1',
+      'http://192.168.1.1',
+      'http://192.0.2.1',
+      'http://198.18.0.1',
+      'http://224.0.0.1',
+      'http://192.175.48.1',
+      'http://[::1]',
+      'http://[::]',
+      'http://[fc00::1]',
+      'http://[fe80::1]',
+      'http://[fec0::1]',
+      'http://[2001:db8::1]',
+      'http://[2001:3::1]',
+      'http://[2001:4:112::1]',
+      'http://[2001:30::1]',
+      'http://[5f00::1]',
+      'http://[100:0:0:1::1]',
+      'http://[2620:4f:8000::1]',
+      'http://[64:ff9b::7f00:1]',
+      'http://[ff02::1]',
+    ]) {
+      const fetchImpl = vi.fn()
+      await expect(new FigmaClient({ ...valid, baseUrl, fetchImpl }).authTest()).rejects.toBeInstanceOf(FigmaError)
+      expect(fetchImpl).not.toHaveBeenCalled()
+    }
+  })
+
+  it('fails closed on blocked, failed, empty, or inconsistent DNS results', async () => {
+    for (const lookupImpl of [
+      async () => [{ address: '192.168.1.10', family: 4 as const }],
+      async () => [{ address: '93.184.216.34', family: 4 as const }, { address: '169.254.169.254', family: 4 as const }],
+      async () => { throw new Error('dns failure') },
+      async () => [],
+      async () => [{ address: '2001:db8::1', family: 4 as const }],
+    ]) {
+      const fetchImpl = vi.fn()
+      await expect(new FigmaClient({ ...valid, baseUrl: 'https://figma.example.test', fetchImpl, lookupImpl }).authTest()).rejects.toBeInstanceOf(FigmaError)
+      expect(fetchImpl).not.toHaveBeenCalled()
+    }
+  })
+
+  it('allows a public endpoint that resolves to a public address', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
+    await new FigmaClient({ ...valid, baseUrl: 'https://figma.example.test', fetchImpl, lookupImpl: publicLookup }).authTest().catch(() => undefined)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 })

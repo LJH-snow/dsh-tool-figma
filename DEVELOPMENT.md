@@ -6,7 +6,7 @@
 |---|---|
 | 项目名 | `dsh-tool-figma` |
 | 定位 | DeepSeek Harness 的 Figma 设计上下文插件 |
-| 版本 | v0.1.0 |
+| 版本 | v0.2.0 |
 | 架构 | Cordis 插件 + `ctx.tools.register(defineTool(...))` |
 | API | Figma REST API v1（契约核对自官方 `figma/rest-api-spec` OpenAPI 文档） |
 | 认证 | `X-Figma-Token` 请求头，令牌从环境变量读取 |
@@ -63,3 +63,9 @@ npm pack --dry-run
 - 增加 dev resources 只读工具。
 - 增加 components/styles 团队库查询。
 - 跟随 Figma API 变化补充兼容性测试。
+
+## endpoint 安全校验
+
+`baseUrl` 规范化为 origin + 路径前缀，禁止 credentials、query 和 fragment。每次请求前用 `src/url-security.ts` 做 fail-closed 目标校验：拒绝 localhost/.local 名称、环回、私有、链路本地、CGNAT、组播、保留及全部 IANA 特殊用途地址段，域名 DNS 结果含任一此类地址即拒绝。本插件只面向公网 SaaS，因此该策略**始终生效**，默认即受保护。
+
+阻断清单（18 个 IPv4 + 16 个 IPv6）与 IANA 注册表对齐，`src/url-security.ts` 由 `.verify/gen-url-security.mjs` 生成，不得单独修改；行为由 `.verify/security-vectors.json` 生成的测试向量固定。`lookupImpl` 仅作测试注入点，不进入插件配置接口。
